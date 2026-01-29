@@ -7,7 +7,7 @@ current_dir = Path(__file__).resolve().parent
 sys.path.append(str(current_dir))
 import ingest_utils
 
-BASE_DIR = Path(__file__).resolve().parents[1]
+BASE_DIR = Path(__file__).resolve().parents[2]
 RAW_SAT_DIR = BASE_DIR / "data" / "raw" / "satellite"
 RAW_SAT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -58,3 +58,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     ingest_satellite(args.file)
+
