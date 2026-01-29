@@ -7,7 +7,7 @@ current_dir = Path(__file__).resolve().parent
 sys.path.append(str(current_dir))
 import ingest_utils
 
-BASE_DIR = Path(__file__).resolve().parents[1]
+BASE_DIR = Path(__file__).resolve().parents[2]
 RAW_OSM_DIR = BASE_DIR / "data" / "raw" / "osm"
 RAW_OSM_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -132,3 +132,4 @@ if __name__ == "__main__":
         include_roads=not args.skip_roads,
         include_water=not args.skip_water
     )
+
