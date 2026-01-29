@@ -10,7 +10,7 @@ import satellite_ingest
 import osm_ingest
 import ingest_utils
 
-BASE_DIR = Path(__file__).resolve().parents[1]
+BASE_DIR = Path(__file__).resolve().parents[2]
 RAW_DATA_DIR = BASE_DIR / "data" / "raw"
 
 
