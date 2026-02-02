@@ -38,7 +38,7 @@ def normalize_raster(input_path: Path):
             "height": height
         })
 
-        output_name = f"{input_path.stem}_utm.tif"
+        output_name = f"{input_path.stem}.tif"
         output_path = OUTPUT_DIR / output_name
 
         with rasterio.open(output_path, "w", **meta) as dst:
@@ -73,3 +73,4 @@ if __name__ == "__main__":
     else:
         for sat in sat_files:
             normalize_raster(sat)
+

@@ -24,7 +24,11 @@ class ValidationEngine:
         Args:
             config: Configuration dict with validation thresholds
         """
-        self.config = config or self._default_config()
+        # Start with defaults and merge custom config
+        self.config = self._default_config()
+        if config:
+            self.config.update(config)
+        
         self.validation_results = {
             'timestamp': datetime.now().isoformat(),
             'checks': {},
@@ -48,6 +52,10 @@ class ValidationEngine:
             'required_road_attrs': [
                 'width_m', 'road_type', 'nav_weight', 
                 'length_m', 'speed_limit_kmh', 'lanes', 'confidence'
+            ],
+            'required_water_attrs': [
+                'water_type', 'surface_area_m2', 'perimeter_m',
+                'depth_m', 'confidence'
             ],
             'required_terrain_files': [
                 'elevation.tif', 'slope.tif', 'aspect.tif'
@@ -111,10 +119,12 @@ class ValidationEngine:
         
         # Check vector files
         vector_files = [
-            'features/buildings_enriched.geojson',
-            'features/roads_enriched.geojson',
+            'features/buildings.geojson',
+            'features/roads.geojson',
+            'features/water.geojson',
             'clean/buildings_clean.geojson',
-            'clean/roads_clean.geojson'
+            'clean/roads_clean.geojson',
+            'clean/water_clean.geojson'
         ]
         
         for file in vector_files:
@@ -177,8 +187,9 @@ class ValidationEngine:
         geometry_issues = []
         
         vector_files = [
-            ('buildings', 'features/buildings_enriched.geojson'),
-            ('roads', 'features/roads_enriched.geojson')
+            ('buildings', 'features/buildings.geojson'),
+            ('roads', 'features/roads.geojson'),
+            ('water', 'features/water.geojson')
         ]
         
         for name, file in vector_files:
@@ -247,7 +258,7 @@ class ValidationEngine:
         """Check that all required attributes exist"""
         
         # Buildings
-        buildings_file = data_path / 'features/buildings_enriched.geojson'
+        buildings_file = data_path / 'features/buildings.geojson'
         if buildings_file.exists():
             try:
                 gdf = gpd.read_file(buildings_file)
@@ -293,7 +304,7 @@ class ValidationEngine:
                 })
         
         # Roads
-        roads_file = data_path / 'features/roads_enriched.geojson'
+        roads_file = data_path / 'features/roads.geojson'
         if roads_file.exists():
             try:
                 gdf = gpd.read_file(roads_file)
@@ -335,6 +346,52 @@ class ValidationEngine:
                 self.validation_results['errors'].append({
                     'check': 'attribute_completeness',
                     'feature_type': 'roads',
+                    'error': str(e)
+                })
+        
+        # Water
+        water_file = data_path / 'features/water.geojson'
+        if water_file.exists():
+            try:
+                gdf = gpd.read_file(water_file)
+                missing_attrs = self._check_required_attributes(
+                    gdf,
+                    self.config['required_water_attrs'],
+                    'water'
+                )
+                
+                if missing_attrs:
+                    self.validation_results['errors'].append({
+                        'check': 'attribute_completeness',
+                        'feature_type': 'water',
+                        'error': 'Missing required attributes',
+                        'missing': missing_attrs
+                    })
+                else:
+                    # Check for null values
+                    null_counts = self._check_null_values(
+                        gdf,
+                        self.config['required_water_attrs']
+                    )
+                    
+                    self.validation_results['checks']['water_attributes'] = {
+                        'passed': True,
+                        'null_counts': null_counts
+                    }
+                    
+                    # Warn if high null percentage
+                    for attr, count in null_counts.items():
+                        pct = (count / len(gdf)) * 100
+                        if pct > 10:
+                            self.validation_results['warnings'].append({
+                                'check': 'attribute_completeness',
+                                'feature_type': 'water',
+                                'warning': f'{attr} has {pct:.1f}% null values'
+                            })
+            except Exception as e:
+                self.validation_results['errors'].append({
+                    'check': 'attribute_completeness',
+                    'feature_type': 'water',
                     'error': str(e)
                 })
     
@@ -472,8 +529,8 @@ class ValidationEngine:
                 })
         
         # Check feature confidence scores
-        for feature_type in ['buildings', 'roads']:
-            file_path = data_path / f'features/{feature_type}_enriched.geojson'
+        for feature_type in ['buildings', 'roads', 'water']:
+            file_path = data_path / f'features/{feature_type}.geojson'
             if file_path.exists():
                 try:
                     gdf = gpd.read_file(file_path)
@@ -523,11 +580,18 @@ class ValidationEngine:
                 'speed_limit_kmh': int,
                 'lanes': int,
                 'confidence': float
+            },
+            'water': {
+                'water_type': str,
+                'surface_area_m2': float,
+                'perimeter_m': float,
+                'depth_m': float,
+                'confidence': float
             }
         }
         
         for feature_type, schema in schemas.items():
-            file_path = data_path / f'features/{feature_type}_enriched.geojson'
+            file_path = data_path / f'features/{feature_type}.geojson'
             if not file_path.exists():
                 continue
             
@@ -549,7 +613,23 @@ class ValidationEngine:
                         if not np.issubdtype(actual_dtype, np.integer):
                             schema_errors.append(f'{attr}: expected integer, got {actual_dtype}')
                     elif expected_type == str:
-                        if actual_dtype != 'object':
+                        # Pandas stores strings as 'object' dtype or 'string' dtype
+                        # Accept: object, string, str (various representations)
+                        dtype_str = str(actual_dtype).lower()
+                        dtype_name = actual_dtype.name.lower()
+                        
+                        is_string_dtype = (
+                            actual_dtype == np.object_ or 
+                            dtype_name == 'object' or
+                            dtype_name == 'string' or
+                            dtype_str == 'object' or
+                            dtype_str == 'string' or
+                            dtype_str == 'str' or
+                            'string' in dtype_str or
+                            'object' in dtype_str
+                        )
+                        
+                        if not is_string_dtype:
                             schema_errors.append(f'{attr}: expected string, got {actual_dtype}')
                 
                 if schema_errors:
@@ -576,7 +656,7 @@ class ValidationEngine:
         """Check for logical data consistency"""
         
         # Buildings consistency
-        buildings_file = data_path / 'features/buildings_enriched.geojson'
+        buildings_file = data_path / 'features/buildings.geojson'
         if buildings_file.exists():
             try:
                 gdf = gpd.read_file(buildings_file)
@@ -626,7 +706,7 @@ class ValidationEngine:
                 })
         
         # Roads consistency
-        roads_file = data_path / 'features/roads_enriched.geojson'
+        roads_file = data_path / 'features/roads.geojson'
         if roads_file.exists():
             try:
                 gdf = gpd.read_file(roads_file)
@@ -674,6 +754,50 @@ class ValidationEngine:
                     'feature_type': 'roads',
                     'warning': str(e)
                 })
+        
+        # Water consistency
+        water_file = data_path / 'features/water.geojson'
+        if water_file.exists():
+            try:
+                gdf = gpd.read_file(water_file)
+                issues = []
+                
+                # Check area > 0
+                if 'surface_area_m2' in gdf.columns:
+                    invalid_area = gdf[gdf['surface_area_m2'] <= 0]
+                    if len(invalid_area) > 0:
+                        issues.append(f'{len(invalid_area)} water bodies with area <= 0')
+                
+                # Check depth >= 0
+                if 'depth_m' in gdf.columns:
+                    invalid_depth = gdf[gdf['depth_m'] < 0]
+                    if len(invalid_depth) > 0:
+                        issues.append(f'{len(invalid_depth)} water bodies with negative depth')
+                
+                # Check confidence range
+                if 'confidence' in gdf.columns:
+                    invalid_conf = gdf[(gdf['confidence'] < 0) | (gdf['confidence'] > 1)]
+                    if len(invalid_conf) > 0:
+                        issues.append(f'{len(invalid_conf)} water bodies with invalid confidence')
+                
+                if issues:
+                    self.validation_results['warnings'].append({
+                        'check': 'data_consistency',
+                        'feature_type': 'water',
+                        'warning': 'Consistency issues found',
+                        'details': issues
+                    })
+                else:
+                    self.validation_results['checks']['water_consistency'] = {
+                        'passed': True
+                    }
+                    
+            except Exception as e:
+                self.validation_results['warnings'].append({
+                    'check': 'data_consistency',
+                    'feature_type': 'water',
+                    'warning': str(e)
+                })
     
     def save_report(self, output_path: str):
         """
@@ -685,8 +809,28 @@ class ValidationEngine:
         report_path = Path(output_path)
         report_path.parent.mkdir(parents=True, exist_ok=True)
         
+        # Convert numpy types to Python native types for JSON serialization
+        def convert_to_serializable(obj):
+            """Recursively convert numpy types to Python native types"""
+            if isinstance(obj, dict):
+                return {k: convert_to_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_to_serializable(item) for item in obj]
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            else:
+                return obj
+        
+        serializable_results = convert_to_serializable(self.validation_results)
+        
         with open(report_path, 'w') as f:
-            json.dump(self.validation_results, f, indent=2)
+            json.dump(serializable_results, f, indent=2)
         
         print(f"✓ Validation report saved to {output_path}")
     

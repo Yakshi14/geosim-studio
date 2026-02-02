@@ -1,0 +1,7 @@
+﻿# Ignore artifacts
+tests/data/*/**
+
+# Automatically ignored by git, but not by prettier
+.mypy_cache
+.pytest_cache
+.ruff_cache

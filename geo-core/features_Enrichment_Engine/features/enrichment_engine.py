@@ -165,17 +165,24 @@ class FeatureEnricher:
         return enriched
 
     def _estimate_road_width(self, row) -> float:
+        """Estimate road width with NaN handling"""
         width = row.get("width")
         if isinstance(width, (int, float, str)):
             try:
-                return float(width)
+                val = float(width)
+                # Check for NaN
+                if not np.isnan(val):
+                    return val
             except:
                 pass
 
         lanes = row.get("lanes")
         if isinstance(lanes, (int, float, str)):
             try:
-                return int(lanes) * 3.5
+                val = int(lanes)
+                # Check for NaN
+                if not np.isnan(val):
+                    return val * 3.5
             except:
                 pass
 
@@ -238,7 +245,10 @@ class FeatureEnricher:
         speed = row.get("maxspeed")
         if isinstance(speed, (int, float, str)):
             try:
-                return int(speed)
+                val = int(speed)
+                # Check for NaN
+                if not np.isnan(val):
+                    return val
             except:
                 pass
 
@@ -254,14 +264,27 @@ class FeatureEnricher:
         return defaults.get(highway, 50)
 
     def _estimate_lanes(self, row) -> int:
+        """Estimate lanes with proper NaN handling - THIS IS THE FIX"""
         lanes = row.get("lanes")
         if isinstance(lanes, (int, float, str)):
             try:
-                return int(lanes)
+                val = int(lanes)
+                # Check for NaN
+                if not np.isnan(val):
+                    return max(1, val)
             except:
                 pass
 
-        return max(1, int(self._estimate_road_width(row) / 3.5))
+        # Estimate from width
+        width = self._estimate_road_width(row)
+        
+        # Check if width is NaN
+        if np.isnan(width):
+            # Return default value of 1 lane if width cannot be determined
+            return 1
+        
+        # Calculate lanes from width, ensuring at least 1 lane
+        return max(1, int(width / 3.5))
 
     def _calculate_road_confidence(self, row) -> float:
         score = 0.5
@@ -279,15 +302,138 @@ class FeatureEnricher:
 
         return min(score, 1.0)
 
+    # ---------------- WATER ---------------- #
+
+    def enrich_water(self, water_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        enriched = water_gdf.copy()
+
+        enriched["water_type"] = enriched.apply(self._classify_water_type, axis=1)
+        enriched["surface_area_m2"] = enriched.geometry.area
+        enriched["perimeter_m"] = enriched.geometry.length
+        enriched["depth_m"] = enriched.apply(self._estimate_water_depth, axis=1)
+        enriched["flow_direction"] = enriched.apply(self._estimate_flow_direction, axis=1)
+        enriched["confidence"] = enriched.apply(
+            self._calculate_water_confidence, axis=1
+        )
+
+        return enriched
+
+    def _classify_water_type(self, row) -> str:
+        natural = row.get("natural")
+        natural = natural.lower() if isinstance(natural, str) else ""
+
+        waterway = row.get("waterway")
+        waterway = waterway.lower() if isinstance(waterway, str) else ""
+
+        landuse = row.get("landuse")
+        landuse = landuse.lower() if isinstance(landuse, str) else ""
+
+        # natural tag mappings
+        if natural == "water":
+            # Disambiguate via landuse or name
+            if landuse == "reservoir":
+                return "reservoir"
+            if landuse == "basin":
+                return "pond"
+            # Fall through to area heuristic below
+        if natural == "wetland":
+            return "wetland"
+        if natural == "bay":
+            return "sea"
+
+        # waterway tag mappings (can be polygons for wide rivers/canals)
+        if waterway == "river":
+            return "river"
+        if waterway == "stream":
+            return "stream"
+        if waterway == "canal":
+            return "canal"
+        if waterway == "ditch":
+            return "canal"
+
+        # landuse tag mappings
+        if landuse == "reservoir":
+            return "reservoir"
+        if landuse == "basin":
+            return "pond"
+
+        # Area-based fallback for untagged natural=water
+        area = row.geometry.area
+        if area > 100000:    # >10 hectares → lake
+            return "lake"
+        if area > 5000:      # >0.5 hectares → pond
+            return "pond"
+        return "pond"        # tiny polygons default to pond
+
+    def _estimate_water_depth(self, row) -> float:
+        # Honour explicit depth tag if present
+        depth = row.get("depth")
+        if isinstance(depth, (int, float, str)):
+            try:
+                val = float(depth)
+                if not np.isnan(val) and val > 0:
+                    return val
+            except (ValueError, TypeError):
+                pass
+
+        # Heuristic defaults keyed on classified water_type
+        water_type = row.get("water_type", "other")
+        area = row.geometry.area
+
+        defaults_by_type = {
+            "lake":      15.0,
+            "reservoir": 20.0,
+            "pond":       3.0,
+            "river":      2.5,
+            "stream":     0.8,
+            "canal":      1.5,
+            "wetland":    0.5,
+            "sea":       50.0,
+        }
+
+        base = defaults_by_type.get(water_type, 5.0)
+
+        if water_type in ("lake", "reservoir") and area > 500000:
+            base *= 1.4
+
+        return round(base, 1)
+
+    def _estimate_flow_direction(self, row) -> str:
+        water_type = row.get("water_type", "other")
+
+        if water_type in ("lake", "reservoir", "pond", "wetland", "sea"):
+            return "none"
+
+        flow = row.get("flow")
+        if isinstance(flow, str) and flow.lower() in (
+            "north", "south", "east", "west"
+        ):
+            return flow.lower()
+
+        return "unknown"
+
+    def _calculate_water_confidence(self, row) -> float:
+        score = 0.5
+
+        if row.get("natural"):
+            score += 0.2
+        if row.get("waterway"):
+            score += 0.2
+        if row.get("depth"):
+            score += 0.1
+        if row.geometry.is_valid:
+            score += 0.1
+
+        return min(score, 1.0)
+
     # ---------------- SAVE ---------------- #
 
-    def save_enriched_data(self, buildings, roads, output_dir):
+    def save_enriched_data(self, buildings, roads, water, output_dir):
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        buildings.to_file(output_dir / "buildings_enriched.geojson", driver="GeoJSON")
-        roads.to_file(output_dir / "roads_enriched.geojson", driver="GeoJSON")
+        buildings.to_file(output_dir / "buildings.geojson", driver="GeoJSON")
+        roads.to_file(output_dir / "roads.geojson", driver="GeoJSON")
+        water.to_file(output_dir / "water.geojson", driver="GeoJSON")
 
-        print("✓ Enriched data saved")
-
-
+        print("✅ Enriched data saved")

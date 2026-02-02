@@ -30,6 +30,19 @@ class RoadType(str, Enum):
     OTHER = "other"
 
 
+class WaterType(str, Enum):
+    """Water body classification categories"""
+    LAKE = "lake"
+    RIVER = "river"
+    RESERVOIR = "reservoir"
+    POND = "pond"
+    WETLAND = "wetland"
+    CANAL = "canal"
+    STREAM = "stream"
+    SEA = "sea"
+    OTHER = "other"
+
+
 class LODClass(int, Enum):
     """Level of Detail classes"""
     VERY_LOW = 0
@@ -187,6 +200,75 @@ ROAD_SCHEMA = {
         "ref": {
             "type": "string",
             "description": "Road reference number"
+        }
+    }
+}
+
+
+# Water Body Schema Definition
+WATER_SCHEMA = {
+    "type": "object",
+    "required": [
+        "geometry",
+        "water_type",
+        "surface_area_m2",
+        "perimeter_m",
+        "depth_m",
+        "confidence"
+    ],
+    "properties": {
+        "geometry": {
+            "type": "Polygon",
+            "description": "Water body outline geometry"
+        },
+        "water_type": {
+            "type": "string",
+            "enum": [e.value for e in WaterType],
+            "description": "Water body classification"
+        },
+        "surface_area_m2": {
+            "type": "float",
+            "minimum": 0,
+            "description": "Water surface area in square meters"
+        },
+        "perimeter_m": {
+            "type": "float",
+            "minimum": 0,
+            "description": "Water body perimeter in meters"
+        },
+        "depth_m": {
+            "type": "float",
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Estimated average depth in meters"
+        },
+        "flow_direction": {
+            "type": "string",
+            "enum": ["none", "north", "south", "east", "west", "unknown"],
+            "description": "Dominant flow direction (none for static bodies)"
+        },
+        "confidence": {
+            "type": "float",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Data quality confidence score"
+        },
+        # Optional OSM attributes
+        "natural": {
+            "type": "string",
+            "description": "Original OSM natural tag"
+        },
+        "waterway": {
+            "type": "string",
+            "description": "Original OSM waterway tag"
+        },
+        "landuse": {
+            "type": "string",
+            "description": "Original OSM landuse tag (e.g. reservoir)"
+        },
+        "name": {
+            "type": "string",
+            "description": "Water body name if available"
         }
     }
 }
@@ -382,14 +464,12 @@ def validate_road_schema(feature_dict: Dict[str, Any]) -> tuple[bool, List[str]]
     """
     errors = []
     
-    # Check required fields
     for field in ROAD_SCHEMA["required"]:
         if field == "geometry":
             continue
         if field not in feature_dict:
             errors.append(f"Missing required field: {field}")
-    
-    # Check data types and ranges
+
     if "width_m" in feature_dict:
         val = feature_dict["width_m"]
         if not isinstance(val, (int, float)) or val < 0 or val > 100:
@@ -418,18 +498,48 @@ def validate_road_schema(feature_dict: Dict[str, Any]) -> tuple[bool, List[str]]
     return len(errors) == 0, errors
 
 
+def validate_water_schema(feature_dict: Dict[str, Any]) -> tuple[bool, List[str]]:
+
+    errors = []
+    
+    # Check required fields
+    for field in WATER_SCHEMA["required"]:
+        if field == "geometry":
+            continue
+        if field not in feature_dict:
+            errors.append(f"Missing required field: {field}")
+    
+    # Check data types and ranges
+    if "water_type" in feature_dict:
+        val = feature_dict["water_type"]
+        if val not in [e.value for e in WaterType]:
+            errors.append(f"Invalid water_type: {val}")
+    
+    if "surface_area_m2" in feature_dict:
+        val = feature_dict["surface_area_m2"]
+        if not isinstance(val, (int, float)) or val < 0:
+            errors.append(f"Invalid surface_area_m2: {val}")
+    
+    if "depth_m" in feature_dict:
+        val = feature_dict["depth_m"]
+        if not isinstance(val, (int, float)) or val < 0 or val > 1000:
+            errors.append(f"Invalid depth_m: {val}")
+    
+    if "confidence" in feature_dict:
+        val = feature_dict["confidence"]
+        if not isinstance(val, (int, float)) or val < 0 or val > 1:
+            errors.append(f"Invalid confidence: {val}")
+    
+    return len(errors) == 0, errors
+
+
 def get_schema_version() -> str:
     """Get current schema version"""
     return "1.0.0"
 
 
 def export_schemas_to_json(output_path: str):
-    """
-    Export all schemas to JSON file for documentation
-    
-    Args:
-        output_path: Path to save schema JSON
-    """
+
     import json
     from pathlib import Path
     
@@ -437,6 +547,7 @@ def export_schemas_to_json(output_path: str):
         "version": get_schema_version(),
         "buildings": BUILDING_SCHEMA,
         "roads": ROAD_SCHEMA,
+        "water": WATER_SCHEMA,
         "terrain": TERRAIN_SCHEMA,
         "ai_landuse": AI_LANDUSE_SCHEMA,
         "vegetation": VEGETATION_SCHEMA,
@@ -468,6 +579,21 @@ if __name__ == "__main__":
     
     valid, errors = validate_building_schema(test_building)
     print(f"\nBuilding validation: {'✓ PASS' if valid else '✗ FAIL'}")
+    if errors:
+        for error in errors:
+            print(f"  - {error}")
+    
+    # Example water validation
+    test_water = {
+        "water_type": "lake",
+        "surface_area_m2": 45000.0,
+        "perimeter_m": 850.0,
+        "depth_m": 12.5,
+        "confidence": 0.9
+    }
+    
+    valid, errors = validate_water_schema(test_water)
+    print(f"\nWater validation: {'✓ PASS' if valid else '✗ FAIL'}")
     if errors:
         for error in errors:
             print(f"  - {error}")

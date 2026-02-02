@@ -1,0 +1,49 @@
+# ===============================
+# Python
+# ===============================
+__pycache__/
+*.pyc
+*.pyo
+
+# ===============================
+# Raw satellite data (DO NOT TRACK)
+# ===============================
+AI CLASSIFICATION/data/raw/
+*.SAFE/
+
+# ===============================
+# Processed / generated data
+# ===============================
+AI CLASSIFICATION/data/processed/*.tif
+AI CLASSIFICATION/data/processed/*tiles*/
+
+# ===============================
+# Model weights / checkpoints
+# ===============================
+*.pth
+*.pt
+segment-anything/checkpoints/
+
+# ===============================
+# Figures & outputs
+# ===============================
+*.png
+*.jpg
+
+# Model files
+*.h5
+*.pt
+*.pth
+*.onnx
+*.pkl
+
+# Outputs / logs
+outputs/
+results/
+logs/
+runs/
+
+# OS / IDE
+.vscode/
+.idea/
+.DS_Store
