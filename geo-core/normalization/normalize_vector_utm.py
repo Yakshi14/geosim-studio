@@ -27,7 +27,7 @@ def normalize_vector(input_path: Path):
 
     gdf_utm = gdf.to_crs(utm_crs)
 
-    out_path = OUTPUT_DIR / f"{input_path.stem}_utm.geojson"
+    out_path = OUTPUT_DIR / f"{input_path.stem}.geojson"
     gdf_utm.to_file(out_path, driver="GeoJSON")
 
     print(f"{input_path.stem.upper()} normalized → {utm_crs}")
@@ -41,3 +41,4 @@ if __name__ == "__main__":
     else:
         for osm in osm_files:
             normalize_vector(osm)
+
