@@ -1,16 +1,22 @@
 import os
 import rasterio
-from scripts.ai.landuse.io import align_to_reference
-from scripts.ai.landuse.model import classify_landuse
+from .io import align_to_reference
+from .model import classify_landuse
 
-OUTPUT_DIR = "data/ai"
+
+BASE_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../../../")
+)
+
+
+OUTPUT_DIR = os.path.join(BASE_DIR, "data/ai")
 
 def run_landuse():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    satellite_path = "data/normalized/satellite_utm.tif"
-    elevation_path = "data/terrain/elevation.tif"
-    slope_path = "data/terrain/slope.tif"
+    satellite_path = os.path.join(BASE_DIR, "data/normalized/satellite_utm")
+    elevation_path = os.path.join(BASE_DIR, "data/terrain/elevation.tif")
+    slope_path = os.path.join(BASE_DIR, "data/terrain/slope.tif")
 
     elevation, meta = align_to_reference(satellite_path, elevation_path)
     slope, _ = align_to_reference(satellite_path, slope_path)
@@ -43,3 +49,8 @@ def run_landuse():
         dst.write(confidence, 1)
 
     print("✅ Module 6 — Land-use classification completed")
+
+
+
+if __name__ == "__main__":
+    run_landuse()
