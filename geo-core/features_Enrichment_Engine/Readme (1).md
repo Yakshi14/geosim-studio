@@ -1,5 +1,12 @@
 # Feature Enrichment & Validation Module
 
+```
+Phase-1 Validation Notes:
+- Attribute and schema validations are enforced
+- CRS, geometry, and terrain checks may emit warnings if upstream data is missing
+- Warnings do not block Phase-1 exports
+```
+
 ## 📂 File Structure
 
 ```

@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-02-01T11:26:31.561662",
+  "checks": {
+    "terrain_continuity": {}
+  },
+  "errors": [],
+  "warnings": [
+    {
+      "check": "crs_uniformity",
+      "warning": "No files found to check CRS"
+    },
+    {
+      "check": "geometry_validity",
+      "warning": "File not found: features/buildings_enriched.geojson"
+    },
+    {
+      "check": "geometry_validity",
+      "warning": "File not found: features/roads_enriched.geojson"
+    },
+    {
+      "check": "terrain_continuity",
+      "warning": "Terrain file not found: elevation.tif"
+    },
+    {
+      "check": "terrain_continuity",
+      "warning": "Terrain file not found: slope.tif"
+    },
+    {
+      "check": "terrain_continuity",
+      "warning": "Terrain file not found: aspect.tif"
+    }
+  ],
+  "passed": true
+}
